@@ -442,6 +442,102 @@ static void cgltf_write_texture(cgltf_write_context* context, const cgltf_textur
 	cgltf_write_line(context, "}");
 }
 
+static void cgltf_write_skin(cgltf_write_context* context, const cgltf_skin* skin)
+{
+    cgltf_write_line(context, "{");
+    cgltf_write_intprop(context, "skeleton", 12, 0/*skin->skeleton - context->data->nodes*/);
+    CGLTF_WRITE_IDXPROP("inverseBindMatrices", skin->inverse_bind_matrices, context->data->accessors);
+    CGLTF_WRITE_IDXARRPROP("joints", skin->joints_count, skin->joints, context->data->nodes);
+    cgltf_write_strprop(context, "name", skin->name);
+    cgltf_write_line(context, "}");
+}
+
+static const char* cgltf_write_str_path_type(cgltf_animation_path_type path_type)
+{
+    switch (path_type)
+    {
+    case cgltf_animation_path_type_translation:
+        return "translation";
+    case cgltf_animation_path_type_rotation:
+        return "rotation";
+    case cgltf_animation_path_type_scale:
+        return "scale";
+    case cgltf_animation_path_type_weights:
+        return "weights";
+    }
+    return "invalid";
+}
+
+static const char* cgltf_write_str_interpolation_type(cgltf_interpolation_type interpolation_type)
+{
+    switch (interpolation_type)
+    {
+    case cgltf_interpolation_type_linear: 
+        return "LINEAR";
+    case cgltf_interpolation_type_step: 
+        return "STEP";
+    case cgltf_interpolation_type_cubic_spline: 
+        return "CUBICSPLINE";
+    }
+    return "invalid";
+}
+
+static void cgltf_write_path_type(cgltf_write_context* context, const char *label, cgltf_animation_path_type path_type)
+{
+    cgltf_write_strprop(context, label, cgltf_write_str_path_type(path_type));
+}
+
+static void cgltf_write_interpolation_type(cgltf_write_context* context, const char *label, cgltf_interpolation_type interpolation_type)
+{
+    cgltf_write_strprop(context, label, cgltf_write_str_interpolation_type(interpolation_type));
+}
+
+static void cgltf_write_animation_sampler(cgltf_write_context* context, const cgltf_animation_sampler* animation_sampler)
+{
+    cgltf_write_line(context, "{");
+    cgltf_write_interpolation_type(context, "interpolation", animation_sampler->interpolation);
+    CGLTF_WRITE_IDXPROP("input", animation_sampler->input, context->data->accessors);
+    CGLTF_WRITE_IDXPROP("output", animation_sampler->output, context->data->accessors);
+    cgltf_write_line(context, "}");
+}
+
+static void cgltf_write_animation_channel(cgltf_write_context* context, const cgltf_animation* animation, const cgltf_animation_channel* animation_channel)
+{
+    cgltf_write_line(context, "{");
+    CGLTF_WRITE_IDXPROP("sampler", animation_channel->sampler, animation->samplers);
+    cgltf_write_line(context, "\"target\": {");
+    CGLTF_WRITE_IDXPROP("node", animation_channel->target_node, context->data->nodes);
+    cgltf_write_path_type(context, "path", animation_channel->target_path);
+    cgltf_write_line(context, "}");
+    cgltf_write_line(context, "}");
+}
+
+static void cgltf_write_animation(cgltf_write_context* context, const cgltf_animation* animation)
+{
+    cgltf_write_line(context, "{");
+    cgltf_write_strprop(context, "name", animation->name);
+
+    if (animation->samplers_count > 0)
+    {
+        cgltf_write_line(context, "\"samplers\": [");
+        for (cgltf_size i = 0; i < animation->samplers_count; ++i)
+        {
+            cgltf_write_animation_sampler(context, animation->samplers + i);
+        }
+        cgltf_write_line(context, "]");
+    }
+    if (animation->channels_count > 0)
+    {
+        cgltf_write_line(context, "\"channels\": [");
+        for (cgltf_size i = 0; i < animation->channels_count; ++i)
+        {
+            cgltf_write_animation_channel(context, animation, animation->channels + i);
+        }
+        cgltf_write_line(context, "]");
+    }
+    cgltf_write_line(context, "}");
+}
+
 static void cgltf_write_sampler(cgltf_write_context* context, const cgltf_sampler* sampler)
 {
 	cgltf_write_line(context, "{");
@@ -474,7 +570,11 @@ static void cgltf_write_node(cgltf_write_context* context, const cgltf_node* nod
 	{
 		cgltf_write_floatarrayprop(context, "scale", node->scale, 3);
 	}
-	// TODO: skin, weights, light, camera
+    if (node->skin)
+    {
+        CGLTF_WRITE_IDXPROP("skin", node->skin, context->data->skins);
+    }
+	// TODO: weights, light, camera
 	cgltf_write_line(context, "}");
 }
 
@@ -645,7 +745,27 @@ cgltf_size cgltf_write(const cgltf_options* options, char* buffer, cgltf_size si
 		cgltf_write_line(context, "]");
 	}
 
-	// TODO: skins, animations, cameras
+    if (data->skins_count > 0)
+    {
+        cgltf_write_line(context, "\"skins\": [");
+        for (cgltf_size i = 0; i < data->skins_count; ++i)
+        {
+            cgltf_write_skin(context, data->skins + i);
+        }
+        cgltf_write_line(context, "]");
+    }
+
+    if (data->animations_count > 0)
+    {
+        cgltf_write_line(context, "\"animations\": [");
+        for (cgltf_size i = 0; i < data->animations_count; ++i)
+        {
+            cgltf_write_animation(context, data->animations + i);
+        }
+        cgltf_write_line(context, "]");
+    }
+
+	// TODO: cameras
 
 	if (context->extension_flags != 0) {
 		cgltf_write_line(context, "\"extensionsUsed\": [");
